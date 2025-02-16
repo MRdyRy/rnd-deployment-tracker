@@ -35,3 +35,21 @@ pub struct JenkinsJob {
     #[serde(rename = "_class")]
     pub class: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct JenkinsBuildDetails {
+    pub actions: Vec<serde_json::Value>,
+    pub result: Option<String>,
+    pub duration: i64,
+    pub timestamp: i64,
+    pub full_display_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Activity {
+    pub job_name: String,
+    pub committer: Option<String>,
+    pub status: Option<String>,
+    pub duration_seconds: f64,
+    pub timestamp: i64,
+}

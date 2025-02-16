@@ -1,6 +1,6 @@
-use crate::domain::models::{JenkinsBuild, JenkinsFolderResponse, JenkinsJobResponse};
+use crate::domain::models::{JenkinsBuild, JenkinsBuildDetails, JenkinsFolderResponse, JenkinsJobResponse};
 use reqwest::{Client, Response};
-use serde_json::Error as JsonError;
+use serde_json::{json, Error as JsonError};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -41,10 +41,13 @@ impl JenkinsClient {
     }
 
     // Add new method to fetch services
-    pub async fn get_services(&self) -> Result<Vec<String>, JenkinsClientError> {
+    pub async fn get_services(&self, job_parent: String) -> Result<Vec<String>, JenkinsClientError> {
 
         log::info!("in get seervices !");
-        let url = format!("{}api/json", self.base_url);
+        let url: String = match job_parent.is_empty() {
+            true => {format!("{}api/json", self.base_url)}
+            false => {format!("{}{}api/json", self.base_url, job_parent)}
+        };
         log::info!("url : {}", url);
         let response = self.client.get(&url)
             .basic_auth(&self.username, Some(&self.api_key))
@@ -60,6 +63,30 @@ impl JenkinsClient {
             .collect();
 
         Ok(services)
+    }
+
+    pub async fn get_build_details(
+        &self,
+        job_name: &str,
+        build_number: i64
+    ) -> Result<JenkinsBuildDetails, JenkinsClientError> {
+        let url = format!(
+            "{}{}/{}/api/json",
+            self.base_url, job_name, build_number
+        );
+        let response = self.client.get(&url).send().await?;
+        Ok(response.json().await?)
+    }
+
+    pub fn extract_committer(actions: &[serde_json::Value]) -> Option<String> {
+        actions.iter()
+            .find(|a| a.get("_class") == Some(&json!("hudson.model.CauseAction")))
+            .and_then(|a| a.get("causes"))
+            .and_then(|c| c.as_array())
+            .and_then(|c| c.first())
+            .and_then(|c| c.get("userId"))
+            .and_then(|u| u.as_str())
+            .map(|s| s.to_string())
     }
 
     async fn parse_response(&self, response: Response) -> Result<Vec<JenkinsBuild>, JenkinsClientError> {

@@ -1,4 +1,4 @@
-use crate::domain::models::{DeploymentSummary, JenkinsBuild};
+use crate::domain::models::{Activity, DeploymentSummary, JenkinsBuild};
 use crate::infrastructure::jenkins_client::{JenkinsClient, JenkinsClientError};
 use chrono::{DateTime, Utc};
 use futures::future::try_join_all;
@@ -64,5 +64,37 @@ impl DeploymentService {
             // avg_deployments_per_day: avg_deployments,
             avg_deployments_per_day: 0.0,
         }
+    }
+
+    pub async fn get_latest_activities(&self, limit: usize) -> Result<Vec<Activity>, JenkinsClientError> {
+        let mut all_activities = Vec::new();
+
+        // Get last build for each service
+        for service in &self.service_names {
+            log::info!("service name {}",service);
+            if let Some(last_build) = self.jenkins_client.get_builds(service).await?.first() {
+                let details = self.jenkins_client.get_build_details(service, last_build.number).await?;
+                log::info!("details {}",details);
+
+                all_activities.push(Activity {
+                    job_name: details.full_display_name,
+                    committer: JenkinsClient::extract_committer(&details.actions),
+                    status: details.result,
+                    duration_seconds: details.duration as f64 / 1000.0,
+                    timestamp: details.timestamp,
+                });
+            }
+        }
+
+        // Sort by timestamp descending
+        all_activities.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        // Take requested limit
+        Ok(all_activities.into_iter().take(limit).collect())
+    }
+
+    pub async fn get_list_services(&self, job_parent: &str) -> Result<Vec<String>, JenkinsClientError> {
+        let list_services = self.jenkins_client.get_services(job_parent.to_string()).await?;
+        Ok(list_services)
     }
 }
